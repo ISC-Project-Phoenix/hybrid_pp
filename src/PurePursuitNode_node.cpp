@@ -23,8 +23,8 @@ PurePursuitNode::PurePursuitNode(const rclcpp::NodeOptions& options)
     current_speed = 1;
 
     // Pub Sub
-    goal_pose_sub = this->create_subscription<geometry_msgs::msg::PoseStamped>(
-        "/goal_pose", 1, std::bind(&PurePursuitNode::ackerman_cb, this, _1));
+    path_sub =
+        this->create_subscription<nav_msgs::msg::Path>("/path", 1, std::bind(&PurePursuitNode::ackerman_cb, this, _1));
     odom_sub = this->create_subscription<nav_msgs::msg::Odometry>("/odom_can", 1,
                                                                   std::bind(&PurePursuitNode::odom_speed_cb, this, _1));
     nav_ack_vel_pub = this->create_publisher<ackermann_msgs::msg::AckermannDrive>("/nav_ack_vel", 1);
@@ -50,19 +50,21 @@ PurePursuitNode::PurePursuitNode(const rclcpp::NodeOptions& options)
             // TODO to make this work with paths, we first need to select a point on the path to use below
             // We also need to add stopping behavior if there are no reachable points
 
+            auto target_point = get_path_point(*this->path);
+
             //TODO remove when we use path, since PP algo removes need for this
             // For now this considers the waypoint reached if its under our steering radius
             {
                 auto trans = this->tf_buffer->lookupTransform(this->rear_axle_frame, (*this->path)->header.frame_id,
                                                               tf2::TimePointZero);
                 geometry_msgs::msg::PoseStamped transformed_goal_pose{};
-                tf2::doTransform(**this->path, transformed_goal_pose, trans);
+                tf2::doTransform(*target_point.get(), transformed_goal_pose, trans);
 
                 RCLCPP_INFO(this->get_logger(), "Distance to goal %f",
                             distance_pose(transformed_goal_pose, geometry_msgs::msg::PoseStamped{}));
 
                 // Stop tracking if too close
-                if (distance_pose(transformed_goal_pose, geometry_msgs::msg::PoseStamped{}) < 3.85) {
+                if (distance_pose(transformed_goal_pose, geometry_msgs::msg::PoseStamped{}) < min_look_ahead_distance) {
                     this->path = std::nullopt;
                     this->publish_stop_command();
                     continue;
@@ -70,7 +72,7 @@ PurePursuitNode::PurePursuitNode(const rclcpp::NodeOptions& options)
             }
 
             // Calculate command to point on path
-            auto command = this->calculate_command_to_point(*this->path);
+            command = this->calculate_command_to_point(target_point);
 
             nav_ack_vel_pub->publish(command.command);
 
@@ -82,7 +84,7 @@ PurePursuitNode::PurePursuitNode(const rclcpp::NodeOptions& options)
     }};
 }
 
-void PurePursuitNode::ackerman_cb(const geometry_msgs::msg::PoseStamped::SharedPtr msg) { this->path = msg; }
+void PurePursuitNode::ackerman_cb(const nav_msgs::msg::Path::SharedPtr msg) { this->path = msg; }
 
 CommandCalcResult PurePursuitNode::calculate_command_to_point(
     geometry_msgs::msg::PoseStamped::SharedPtr target_point) const {
@@ -142,9 +144,6 @@ void PurePursuitNode::publish_visualisation(float look_ahead_distance, float ste
     look_ahead_distance_marker.color.a = 1.0;
     look_ahead_distance_marker.color.r = 1.0;
 
-    // Standard point (0,0), this acts as the center of the rear axle
-    geometry_msgs::msg::Point zero;
-
     // Position used for plotting the visualization markers
     geometry_msgs::msg::Point path_graph_point;
     geometry_msgs::msg::Point look_ahead_graph_point;
@@ -187,4 +186,51 @@ void PurePursuitNode::publish_visualisation(float look_ahead_distance, float ste
 
 void PurePursuitNode::odom_speed_cb(const nav_msgs::msg::Odometry::SharedPtr msg) {
     current_speed = msg->twist.twist.linear.x;
+}
+
+geometry_msgs::msg::PoseStamped::SharedPtr PurePursuitNode::get_path_point(const nav_msgs::msg::Path::SharedPtr path) {
+    std::vector<geometry_msgs::msg::Point> spline;
+    geometry_msgs::msg::PoseStamped::SharedPtr intercepted_pose;
+
+    for (int t = 0; t < path->poses.size(); t += 0.005f) {
+        int p0, p1, p2, p3;
+
+        p1 = int(t) + 1;
+        p2 = p1 + 1;
+        p3 = p2 + 1;
+        p0 = p1 - 1;
+
+        t = t - (int)t;
+
+        float tt = std::pow(t, 2);
+        float ttt = std::pow(t, 3);
+
+        float q1 = -ttt + 2.0f * tt - t;
+        float q2 = 3.0f * ttt - 5.0f * tt + 2.0f;
+        float q3 = -3.0f * ttt + 4.0f * tt + t;
+        float q4 = ttt - tt;
+
+        auto points = path.get()->poses;
+
+        float tx = 0.5f * (points[p0].pose.position.x * q1 + points[p1].pose.position.x * q2 +
+                           points[p2].pose.position.x * q3 + points[p3].pose.position.x * q4);
+        float ty = 0.5f * (points[p0].pose.position.y * q1 + points[p1].pose.position.y * q2 +
+                           points[p2].pose.position.y * q3 + points[p3].pose.position.y * q4);
+
+        geometry_msgs::msg::Point point;
+
+        point.x = tx;
+        point.y = ty;
+
+        spline.push_back(point);
+    };
+
+    for (int i = 0; i < spline.size(); i++) {
+        if (std::abs(distance(spline.at(i), zero) - command.look_ahead_distance) <= 0.05) {
+            intercepted_pose.get()->pose.position.x = spline.at(i).x;
+            intercepted_pose.get()->pose.position.y = spline.at(i).y;
+        }
+    }
+
+    return intercepted_pose;
 }

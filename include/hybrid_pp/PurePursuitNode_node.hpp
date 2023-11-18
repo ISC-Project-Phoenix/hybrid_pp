@@ -5,6 +5,7 @@
 #include <tf2_ros/transform_listener.h>
 
 #include <cmath>
+#include <map>
 #include <mutex>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <thread>
@@ -12,6 +13,7 @@
 #include "ackermann_msgs/msg/ackermann_drive.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 #include "nav_msgs/msg/odometry.hpp"
+#include "nav_msgs/msg/path.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/string.hpp"
 #include "visualization_msgs/msg/marker.hpp"
@@ -29,6 +31,10 @@ class PurePursuitNode : public rclcpp::Node {
 private:
     /// Current speed from odom.
     float current_speed;
+    // Standard point (0,0), this acts as the center of the rear axle
+    geometry_msgs::msg::Point zero;
+    // The command to be published
+    CommandCalcResult command;
 
     // Parameters
     tf2::Duration transform_tolerance;
@@ -49,7 +55,7 @@ private:
     /// Thread that performs the main loop
     std::thread work_thread;
     /// Current path to follow
-    std::optional<geometry_msgs::msg::PoseStamped::SharedPtr> path;  // TODO make path
+    std::optional<nav_msgs::msg::Path::SharedPtr> path;  // TODO make path
     /// Node frequency
     rclcpp::WallRate rate;
 
@@ -58,7 +64,7 @@ private:
     std::unique_ptr<tf2_ros::Buffer> tf_buffer;
 
     // Pub/Sub
-    rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr goal_pose_sub;
+    rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr path_sub;
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub;
     rclcpp::Publisher<ackermann_msgs::msg::AckermannDrive>::SharedPtr nav_ack_vel_pub;
     rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr path_vis_marker_pub;
@@ -79,11 +85,13 @@ private:
         this->nav_ack_vel_pub->publish(zero);
     }
 
+    geometry_msgs::msg::PoseStamped::SharedPtr get_path_point(const nav_msgs::msg::Path::SharedPtr path);
+
 public:
     PurePursuitNode(const rclcpp::NodeOptions& options);
 
     /// Callback for sending ackerman data after calculating ackerman angle.
-    void ackerman_cb(geometry_msgs::msg::PoseStamped::SharedPtr msg);
+    void ackerman_cb(nav_msgs::msg::Path::SharedPtr msg);
     /// Callback for getting current speed from odom.
     void odom_speed_cb(nav_msgs::msg::Odometry::SharedPtr msg);
     /// Publishes markers visualising the pure pursuit geometry.
