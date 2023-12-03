@@ -49,6 +49,8 @@ private:
     /// Publishes visualisations if true
     bool debug;
 
+    geometry_msgs::msg::PoseStamped target_point;
+
     // Multithreading
     /// Set to true to kill thread
     std::atomic_bool stop_token{false};
@@ -85,7 +87,9 @@ private:
         this->nav_ack_vel_pub->publish(zero);
     }
 
-    geometry_msgs::msg::PoseStamped::SharedPtr get_path_point(const nav_msgs::msg::Path::SharedPtr path);
+    geometry_msgs::msg::PoseStamped get_path_point();
+
+    std::mutex path_mutex;
 
 public:
     PurePursuitNode(const rclcpp::NodeOptions& options);
@@ -97,7 +101,7 @@ public:
     /// Publishes markers visualising the pure pursuit geometry.
     void publish_visualisation(float look_ahead_distance, float steering_angle, double distance_to_icr);
     /// Calculates the command to reach the given point.
-    CommandCalcResult calculate_command_to_point(geometry_msgs::msg::PoseStamped::SharedPtr target_point) const;
+    CommandCalcResult calculate_command_to_point(geometry_msgs::msg::PoseStamped target_point) const;
 
     ~PurePursuitNode() override { this->stop_token.store(true); }
 };
