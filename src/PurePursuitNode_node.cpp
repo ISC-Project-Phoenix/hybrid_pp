@@ -17,7 +17,7 @@ PurePursuitNode::PurePursuitNode(const rclcpp::NodeOptions& options)
     rear_axle_frame = this->declare_parameter<std::string>("rear_axle_frame", "rear_axle");
     wheel_base = this->declare_parameter<float>("wheel_base", 1.08);
     gravity_constant = this->declare_parameter<float>("gravity_constant", 9.81);
-    debug = this->declare_parameter<bool>("debug", true);
+    debug = this->declare_parameter<bool>("debug", false);
 
     // Var init
     current_speed = 1;
@@ -25,7 +25,7 @@ PurePursuitNode::PurePursuitNode(const rclcpp::NodeOptions& options)
     // Pub Sub
     path_sub =
         this->create_subscription<nav_msgs::msg::Path>("/path", 1, std::bind(&PurePursuitNode::ackerman_cb, this, _1));
-    odom_sub = this->create_subscription<nav_msgs::msg::Odometry>("/odom_can", 1,
+    odom_sub = this->create_subscription<nav_msgs::msg::Odometry>("/odom", 1,
                                                                   std::bind(&PurePursuitNode::odom_speed_cb, this, _1));
     nav_ack_vel_pub = this->create_publisher<ackermann_msgs::msg::AckermannDrive>("/nav_ack_vel", 1);
     path_vis_marker_pub = this->create_publisher<visualization_msgs::msg::Marker>("visualization_marker", 1);
@@ -35,9 +35,8 @@ PurePursuitNode::PurePursuitNode(const rclcpp::NodeOptions& options)
     transform_listener = std::make_shared<tf2_ros::TransformListener>(*tf_buffer);
 
     this->work_thread = std::thread{[this]() {
-        RCLCPP_INFO(this->get_logger(), "Beginning pure pursuit loop...");
+        RCLCPP_INFO(this->get_logger(), "Beginning pure pursuit loop... %d", debug);
         while (this->rate.sleep()) {
-
             // Break if node is dying
             if (this->stop_token.load()) {
                 break;
@@ -96,8 +95,7 @@ void PurePursuitNode::ackerman_cb(const nav_msgs::msg::Path::SharedPtr msg) {
     RCLCPP_INFO(this->get_logger(), "Received path %f", path.value()->poses.at(0).pose.position.x);
 }
 
-CommandCalcResult PurePursuitNode::calculate_command_to_point(
-    geometry_msgs::msg::PoseStamped target_point) const {
+CommandCalcResult PurePursuitNode::calculate_command_to_point(geometry_msgs::msg::PoseStamped target_point) const {
     // Transform goal pose to rear_axle frame
     auto trans =
         this->tf_buffer->lookupTransform(this->rear_axle_frame, target_point.header.frame_id, tf2::TimePointZero);
@@ -252,8 +250,23 @@ geometry_msgs::msg::PoseStamped PurePursuitNode::get_path_point() {
         }
     }
 
+    visualization_msgs::msg::Marker spline_marker;
+    spline_marker.header.frame_id = path.value()->header.frame_id;
+    spline_marker.header.stamp = get_clock()->now();
+    spline_marker.type = visualization_msgs::msg::Marker::LINE_STRIP;
+    spline_marker.action = visualization_msgs::msg::Marker::ADD;
+    spline_marker.ns = "hybrid_pp_ns";
+    spline_marker.id = 1;
+    spline_marker.pose.orientation.w = 1.0;
+    spline_marker.scale.x = 0.1;
+    spline_marker.color.a = 1.0;
+    spline_marker.color.r = 1.0;
+    spline_marker.points = spline;
+
     RCLCPP_INFO(this->get_logger(), "Intercepted pose: %f, %f", intercepted_pose.pose.position.x,
                 intercepted_pose.pose.position.y);
+
+    path_vis_marker_pub->publish(spline_marker);
 
     return intercepted_pose;
 }
