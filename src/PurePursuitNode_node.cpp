@@ -17,7 +17,7 @@ PurePursuitNode::PurePursuitNode(const rclcpp::NodeOptions& options)
     rear_axle_frame = this->declare_parameter<std::string>("rear_axle_frame", "rear_axle");
     wheel_base = this->declare_parameter<float>("wheel_base", 1.08);
     gravity_constant = this->declare_parameter<float>("gravity_constant", 9.81);
-    debug = this->declare_parameter<bool>("debug", false);
+    debug = this->declare_parameter<bool>("debug", true);
 
     // Var init
     current_speed = 1;
@@ -50,34 +50,31 @@ PurePursuitNode::PurePursuitNode(const rclcpp::NodeOptions& options)
             // TODO to make this work with paths, we first need to select a point on the path to use below
             // We also need to add stopping behavior if there are no reachable points
 
-            target_point = get_path_point();
-            target_point.pose.position.x += 5;
-
-            RCLCPP_INFO(this->get_logger(), "Target point: %f, %f", target_point.pose.position.x,
-                        target_point.pose.position.y);
+            auto path_result = get_path_point();
+            // target_point.pose.position.x += 5;
 
             //TODO remove when we use path, since PP algo removes need for this
             // For now this considers the waypoint reached if its under our steering radius
-            {
-                auto trans = this->tf_buffer->lookupTransform(this->rear_axle_frame, target_point.header.frame_id,
-                                                              tf2::TimePointZero);
-                geometry_msgs::msg::PoseStamped transformed_goal_pose{};
-                tf2::doTransform(target_point, transformed_goal_pose, trans);
+            // {
+            //     auto trans = this->tf_buffer->lookupTransform(this->rear_axle_frame, target_point.header.frame_id,
+            //                                                   tf2::TimePointZero);
+            //     geometry_msgs::msg::PoseStamped transformed_goal_pose{};
+            //     tf2::doTransform(target_point, transformed_goal_pose, trans);
 
-                RCLCPP_INFO(this->get_logger(), "Distance to goal %f",
-                            distance_pose(transformed_goal_pose, geometry_msgs::msg::PoseStamped{}));
+            //     RCLCPP_INFO(this->get_logger(), "Distance to goal %f",
+            //                 distance_pose(transformed_goal_pose, geometry_msgs::msg::PoseStamped{}));
 
-                // Stop tracking if too close
-                if (distance_pose(transformed_goal_pose, geometry_msgs::msg::PoseStamped{}) < min_look_ahead_distance) {
-                    this->path = std::nullopt;
-                    this->publish_stop_command();
-                    continue;
-                }
-            }
+            //     // Stop tracking if too close
+            //     if (distance_pose(transformed_goal_pose, geometry_msgs::msg::PoseStamped{}) < min_look_ahead_distance) {
+            //         this->path = std::nullopt;
+            //         this->publish_stop_command();
+            //         continue;
+            //     }
+            // }
 
             // Calculate command to point on path
 
-            command = this->calculate_command_to_point(target_point);
+            auto command = this->calculate_command_to_point(path_result.intersection_point, path_result.look_ahead_distance);
 
             nav_ack_vel_pub->publish(command.command);
 
@@ -92,21 +89,30 @@ PurePursuitNode::PurePursuitNode(const rclcpp::NodeOptions& options)
 void PurePursuitNode::ackerman_cb(const nav_msgs::msg::Path::SharedPtr msg) {
     this->path = msg;
 
-    RCLCPP_INFO(this->get_logger(), "Received path %f", path.value()->poses.at(0).pose.position.x);
+    if (path.value()->poses.at(0).header.frame_id == "") {
+        RCLCPP_INFO(this->get_logger(), "Path has no frame id");
+        return;
+    }
+
+    auto trans =
+        this->tf_buffer->lookupTransform(this->rear_axle_frame, path.value()->header.frame_id, tf2::TimePointZero);
+
+    for (int i = 0; i < path.value()->poses.size(); i++) {
+        geometry_msgs::msg::PoseStamped transformed_goal_pose{};
+        tf2::doTransform(path.value()->poses.at(i), path.value()->poses.at(i), trans);
+    }
 }
 
-CommandCalcResult PurePursuitNode::calculate_command_to_point(geometry_msgs::msg::PoseStamped target_point) const {
+CommandCalcResult PurePursuitNode::calculate_command_to_point(geometry_msgs::msg::PoseStamped target_point,
+                                                              float look_ahead_distance) const {
     // Transform goal pose to rear_axle frame
-    auto trans =
-        this->tf_buffer->lookupTransform(this->rear_axle_frame, target_point.header.frame_id, tf2::TimePointZero);
-    geometry_msgs::msg::PoseStamped transformed_goal_pose{};
-    tf2::doTransform(target_point, transformed_goal_pose, trans);
-
-    // Calc look ahead distance
-    float look_ahead_distance = std::clamp(k_dd * current_speed, min_look_ahead_distance, max_look_ahead_distance);
+    // auto trans =
+    //     this->tf_buffer->lookupTransform(this->rear_axle_frame, target_point.header.frame_id, tf2::TimePointZero);
+    // geometry_msgs::msg::PoseStamped transformed_goal_pose{};
+    // tf2::doTransform(target_point, transformed_goal_pose, trans);
 
     // Calculate the angle between the robot and the goal.
-    float alpha = std::atan2(transformed_goal_pose.pose.position.y, transformed_goal_pose.pose.position.x);
+    float alpha = std::atan2(target_point.pose.position.y, target_point.pose.position.x);
 
     // Set the desired steering angle and set it to the ackerman message
     float steering_angle = std::atan(2.0 * wheel_base * std::sin(alpha) / look_ahead_distance);
@@ -119,7 +125,7 @@ CommandCalcResult PurePursuitNode::calculate_command_to_point(geometry_msgs::msg
     // Set the speed based off the eq v = sqrt(static_friction * gravity * turn_radius) with static friction being 1.
     // This finds the fastest speed that can be taken without breaking friction and slipping.
     float set_speed = std::clamp(std::sqrt(this->gravity_constant * std::abs(distance_to_icr)), 0.1f, this->max_speed);
-    ack_msg.speed = set_speed;
+    ack_msg.speed = 0.25;
 
     CommandCalcResult out{ack_msg, look_ahead_distance, distance_to_icr};
     return out;
@@ -196,53 +202,35 @@ void PurePursuitNode::odom_speed_cb(const nav_msgs::msg::Odometry::SharedPtr msg
     current_speed = msg->twist.twist.linear.x;
 }
 
-geometry_msgs::msg::PoseStamped PurePursuitNode::get_path_point() {
+PathCalcResult PurePursuitNode::get_path_point() {
+    PathCalcResult out{};
     std::vector<geometry_msgs::msg::Point> spline;
     geometry_msgs::msg::PoseStamped intercepted_pose;
 
-    if (path.value()->poses.size() < 4) {
-        RCLCPP_INFO(this->get_logger(), "Path too short");
-        return intercepted_pose;
-    }
+    // Calc look ahead distance
+    float look_ahead_distance = std::clamp(k_dd * current_speed, min_look_ahead_distance, max_look_ahead_distance);
 
-    for (float i = 0; i < path.value()->poses.size(); i += 0.05) {
-        int p0, p1, p2, p3;
+    for (float i = 0; i < path.value()->poses.size() - 1; i++) {
+        geometry_msgs::msg::Point point1 = path.value()->poses.at(i).pose.position;
+        geometry_msgs::msg::Point point2 = path.value()->poses.at(i + 1).pose.position;
 
-        float t = i;
+        // Do the DDA algorithm
+        float dx = point2.x - point1.x;
+        float dy = point2.y - point1.y;
+        float steps = std::max(std::abs(dx), std::abs(dy));
+        float x_inc = dx / steps;
+        float y_inc = dy / steps;
 
-        p1 = int(t) + 1;
-        p2 = p1 + 1;
-        p3 = p2 + 1;
-        p0 = p1 - 1;
-
-        t = t - (int)t;
-
-        float tt = std::pow(t, 2);
-        float ttt = std::pow(t, 3);
-
-        float q1 = -ttt + 2.0f * tt - t;
-        float q2 = 3.0f * ttt - 5.0f * tt + 2.0f;
-        float q3 = -3.0f * ttt + 4.0f * tt + t;
-        float q4 = ttt - tt;
-
-        auto points = path.value()->poses;
-
-        float tx = 0.5f * (points[p0].pose.position.x * q1 + points[p1].pose.position.x * q2 +
-                           points[p2].pose.position.x * q3 + points[p3].pose.position.x * q4);
-        float ty = 0.5f * (points[p0].pose.position.y * q1 + points[p1].pose.position.y * q2 +
-                           points[p2].pose.position.y * q3 + points[p3].pose.position.y * q4);
-
-        geometry_msgs::msg::Point point;
-
-        point.x = tx;
-        point.y = ty;
-
-        spline.push_back(point);
+        geometry_msgs::msg::Point point = point1;
+        for (int i = 0; i < steps; i++) {
+            point.x += x_inc;
+            point.y += y_inc;
+            spline.push_back(point);
+        }
     };
 
     for (int i = 0; i < spline.size(); i++) {
-        if (std::abs(distance(spline.at(i), zero) - command.look_ahead_distance) <= 0.5) {
-            RCLCPP_INFO(this->get_logger(), "spline at 0 %f", spline.at(i).x);
+        if (std::abs(distance(spline.at(i), zero) - look_ahead_distance) <= 0.5) {
             intercepted_pose.pose.position.x = spline.at(i).x;
             intercepted_pose.pose.position.y = spline.at(i).y;
             intercepted_pose.header.frame_id = this->path.value()->header.frame_id;
@@ -251,7 +239,7 @@ geometry_msgs::msg::PoseStamped PurePursuitNode::get_path_point() {
     }
 
     visualization_msgs::msg::Marker spline_marker;
-    spline_marker.header.frame_id = path.value()->header.frame_id;
+    spline_marker.header.frame_id = "rear_axle";
     spline_marker.header.stamp = get_clock()->now();
     spline_marker.type = visualization_msgs::msg::Marker::LINE_STRIP;
     spline_marker.action = visualization_msgs::msg::Marker::ADD;
@@ -263,10 +251,10 @@ geometry_msgs::msg::PoseStamped PurePursuitNode::get_path_point() {
     spline_marker.color.r = 1.0;
     spline_marker.points = spline;
 
-    RCLCPP_INFO(this->get_logger(), "Intercepted pose: %f, %f", intercepted_pose.pose.position.x,
-                intercepted_pose.pose.position.y);
-
     path_vis_marker_pub->publish(spline_marker);
 
-    return intercepted_pose;
+    out.intersection_point = intercepted_pose;
+    out.look_ahead_distance = look_ahead_distance;
+
+    return out;
 }

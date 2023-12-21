@@ -27,15 +27,20 @@ struct CommandCalcResult {
     double turning_radius{};
 };
 
+/// Pure pursuit command result, with components
+struct PathCalcResult {
+    geometry_msgs::msg::PoseStamped intersection_point;
+    /// Distance to the point on the path used
+    float look_ahead_distance{};
+};
+
 class PurePursuitNode : public rclcpp::Node {
 private:
     /// Current speed from odom.
     float current_speed;
     // Standard point (0,0), this acts as the center of the rear axle
     geometry_msgs::msg::Point zero;
-    // The command to be published
-    CommandCalcResult command;
-
+    
     // Parameters
     tf2::Duration transform_tolerance;
     float min_look_ahead_distance;
@@ -87,7 +92,7 @@ private:
         this->nav_ack_vel_pub->publish(zero);
     }
 
-    geometry_msgs::msg::PoseStamped get_path_point();
+    PathCalcResult get_path_point();
 
     std::mutex path_mutex;
 
@@ -101,7 +106,7 @@ public:
     /// Publishes markers visualising the pure pursuit geometry.
     void publish_visualisation(float look_ahead_distance, float steering_angle, double distance_to_icr);
     /// Calculates the command to reach the given point.
-    CommandCalcResult calculate_command_to_point(geometry_msgs::msg::PoseStamped target_point) const;
+    CommandCalcResult calculate_command_to_point(geometry_msgs::msg::PoseStamped target_point, float look_ahead_distance) const;
 
     ~PurePursuitNode() override { this->stop_token.store(true); }
 };
