@@ -9,6 +9,10 @@ Path tracking implementation of the pure pursuit algorithm used to command veloc
 will come into play with the use of the lidar and a TBD obstacle avoidance algorithm. This is a statless implementation and works
 only off its subscriptions.
 
+### Algorithm
+
+Currently we take in the path from obj_planner and create a spline from the list of points. Then based off our current speed we calculate the look ahead distance which is used to check the point of intersection infront of us along the spline. That point of intersection then becomes our target point to which we calculate our steering angle and command velocity. Currently no implementation of an obstical avoidance algorithm, but there are planes to use the [AEB Algorithm](../embed/AEB.md).
+
 ### Publishes
 
 - `/nav_ack_vel`:  The calculated ackerman angle and velocity to be set to phoenix.
