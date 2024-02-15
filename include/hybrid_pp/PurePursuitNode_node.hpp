@@ -128,7 +128,7 @@ private:
     }
 
     /// Transforms a spline into a given target frame.
-    void transform_path(std::vector<geometry_msgs::msg::PoseStamped> path, std::string target_frame) {
+    void transform_path(std::vector<geometry_msgs::msg::PoseStamped>& path, std::string target_frame) {
         if (path.empty()) {
             return;
         }

@@ -89,9 +89,12 @@ PurePursuitNode::PurePursuitNode(const rclcpp::NodeOptions& options)
                 // All the components used in visualization for this node
                 vis_components.intersection_point = path_result.value().intersection_point;
                 vis_components.look_ahead_distance = path_result.value().look_ahead_distance;
-                vis_components.objects = this->objects;
-                vis_components.path_spline = this->path_spline;
                 vis_components.turning_radius = command.turning_radius;
+
+                vis_components.objects = this->objects;
+                this->transform_path(vis_components.objects, this->rear_axle_frame);
+                vis_components.path_spline = this->path_spline;
+                this->transform_path(vis_components.path_spline.value(), this->rear_axle_frame);
 
                 // If in debug mode, publish our visuals
                 if (debug) {
@@ -376,6 +379,7 @@ std::vector<geometry_msgs::msg::PoseStamped> PurePursuitNode::get_objects_from_s
         }
     }
 
+    this->transform_path(detected_points, "odom");
     return detected_points;
 }
 
@@ -387,9 +391,7 @@ std::vector<geometry_msgs::msg::PoseStamped> PurePursuitNode::get_path_spline(co
     // Transform odom->rear-axle, for easy calculations
     this->transform_path(local_path, this->rear_axle_frame);
     // And the scan
-    if (!local_objects.empty()) {
-        this->transform_path(local_objects, this->rear_axle_frame);
-    }
+    this->transform_path(local_objects, this->rear_axle_frame);
 
     // Spline connecting our path points
     std::vector<geometry_msgs::msg::PoseStamped> spline;
@@ -420,7 +422,7 @@ std::vector<geometry_msgs::msg::PoseStamped> PurePursuitNode::get_path_spline(co
         auto right_shifted_point = i.pose.position;
 
         // Two loops checking if path point is too close to the object point
-        for (const auto& object : objects) {
+        for (const auto& object : local_objects) {
             // While to path point too close, shift left
             while (distance(left_shifted_point, object.pose.position) <= avoidance_radius) {
                 left_shifted_point.y -= 0.01;
@@ -428,7 +430,7 @@ std::vector<geometry_msgs::msg::PoseStamped> PurePursuitNode::get_path_spline(co
         }
 
         // while path point too close shift right
-        for (const auto& object : objects) {
+        for (const auto& object : local_objects) {
             while (distance(right_shifted_point, object.pose.position) <= avoidance_radius) {
                 right_shifted_point.y += 0.01;
             }
