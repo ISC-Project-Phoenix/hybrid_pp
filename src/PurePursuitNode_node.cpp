@@ -23,7 +23,7 @@ PurePursuitNode::PurePursuitNode(const rclcpp::NodeOptions& options)
     wheel_base = this->declare_parameter<float>("wheel_base", 1.08);
     gravity_constant = this->declare_parameter<float>("gravity_constant", 9.81);
     debug = this->declare_parameter<bool>("debug", true);
-    this->declare_parameter<bool>("stop_on_no_path", true);
+    this->declare_parameter<bool>("stop_on_no_path", false);
 
     // Var init
     current_speed = 1;
@@ -58,6 +58,7 @@ PurePursuitNode::PurePursuitNode(const rclcpp::NodeOptions& options)
 
             // The calculated intersection and look ahead distance
             std::optional<PathCalcResult> path_result;
+            std::optional<PathCalcResult> last_path_result;
             // Visualization components for publishing visualization
             VisualizationComponents vis_components{};
 
@@ -74,11 +75,29 @@ PurePursuitNode::PurePursuitNode(const rclcpp::NodeOptions& options)
 
             // If no way to follow path, just stop
             if (!path_result.has_value()) {
-                if (this->get_parameter("stop_on_no_path").as_bool()) {
-                    this->publish_stop_command();
+                if (false && this->get_parameter("stop_on_no_path").as_bool()) {
+                    // no more
+                    // this->publish_stop_command();
+
+                } else {
+
+                    ackermann_msgs::msg::AckermannDrive keepgoing{};
+                    //TODO hotfix to get left at comp
+                    keepgoing.speed = 1.0;
+
+                    if ((*last_path_result).intersection_point.pose.position.x < 0) {  /////////////////////// this hopefully should switch the steering directions but breaks on right turns
+                        keepgoing.steering_angle = -0.27;
+                    } else {
+                        keepgoing.steering_angle = 0.27;
+                    }
+
+                    this->nav_ack_vel_pub->publish(keepgoing);
+
                 }
 
                 continue;
+            } else {
+                last_path_result = path_result.value();
             }
 
             // Calculate command to point on path
@@ -130,7 +149,10 @@ void PurePursuitNode::path_cb(const nav_msgs::msg::Path::SharedPtr msg) {
         std::unique_lock lk2{this->obj_mtx};
 
         // Create a spline from the path message
-        this->path_spline = get_path_spline(*msg);
+        auto holder = get_path_spline(*msg);
+        if ( holder.has_value()){
+            this->path_spline = holder.value();
+        } // otherwise we do nothing!
     }
 }
 
@@ -390,7 +412,7 @@ std::vector<geometry_msgs::msg::PoseStamped> PurePursuitNode::get_objects_from_s
     return detected_points;
 }
 
-std::vector<geometry_msgs::msg::PoseStamped> PurePursuitNode::get_path_spline(const nav_msgs::msg::Path& path) {
+std::optional<std::vector<geometry_msgs::msg::PoseStamped>> PurePursuitNode::get_path_spline(const nav_msgs::msg::Path& path) {
     // Create a copy of the path to avoid mutating the main
     auto local_path = path;
     auto local_objects = this->objects;
@@ -403,24 +425,36 @@ std::vector<geometry_msgs::msg::PoseStamped> PurePursuitNode::get_path_spline(co
     // Spline connecting our path points
     std::vector<geometry_msgs::msg::PoseStamped> spline;
 
+    bool gate = true;
+    float look_ahead_distance = std::clamp(k_dd * current_speed, min_look_ahead_distance, max_look_ahead_distance);
     // Build a spline of linear lines for our path
     for (size_t i = 0; i < local_path.poses.size() - 1; i++) {
         auto point1 = local_path.poses.at(i);
-        auto point2 = local_path.poses.at(i + 1);
 
+        double& x = point1.pose.position.x;
+        double& y = point1.pose.position.y;
+
+        if ( std::pow(std::pow(x,2) + std::pow(y,2),0.5) < look_ahead_distance){
+            gate = false;
+        }
+
+        // auto point2 = local_path.poses.at(i + 1);
         // Do the DDA algorithm https://en.wikipedia.org/wiki/Digital_differential_analyzer_(graphics_algorithm)
-        float dx = (float)point2.pose.position.x - (float)point1.pose.position.x;
-        float dy = (float)point2.pose.position.y - (float)point1.pose.position.y;
-        float steps = std::max(std::abs(dx), std::abs(dy));
-        float x_inc = dx / steps;
-        float y_inc = dy / steps;
-
+        // we publish to many path points for this is be useful anymore
+        // float dx = (float)point2.pose.position.x - (float)point1.pose.position.x;
+        // float dy = (float)point2.pose.position.y - (float)point1.pose.position.y;
+        // float steps = std::max(std::abs(dx), std::abs(dy));
+        // float x_inc = dx / steps;
+        // float y_inc = dy / steps;
+        spline.push_back(point1);
+        /*
         for (int j = 0; (float)j < steps; j++) {
             point1.pose.position.x += x_inc;
             point1.pose.position.y += y_inc;
             spline.push_back(point1);
-        }
+        }*/
     }
+    if (gate) return std::nullopt;
 
     // For each spline point, shift it if it is too close to an obstacle. This has the effect of wrapping the spline
     // around obstacles.

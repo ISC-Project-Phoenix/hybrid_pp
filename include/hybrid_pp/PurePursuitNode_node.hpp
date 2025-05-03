@@ -114,14 +114,14 @@ private:
         return std::hypot((float)p1.x - (float)p2.x, (float)p1.y - (float)p2.y);
     }
 
-    /// Publishes a zero move command
-    void publish_stop_command() {
-        ackermann_msgs::msg::AckermannDrive stop{};
-	//TODO hotfix to get left at comp
-	stop.steering_angle = 0.27;
-	stop.speed = 1.0;
-        this->nav_ack_vel_pub->publish(stop);
-    }
+    // /// Publishes a zero move command
+    // void publish_stop_command() {
+    //     ackermann_msgs::msg::AckermannDrive stop{};
+    //     //TODO hotfix to get left at comp
+    //     stop.steering_angle = 0.27;
+    //     stop.speed = 1.0;
+    //     this->nav_ack_vel_pub->publish(stop);
+    // }
 
     /// Transforms a path into a given target frame.
     void transform_path(nav_msgs::msg::Path& path, std::string target_frame) {
@@ -168,7 +168,7 @@ public:
     /// Get the point where the look ahead distance intersects the path
     std::optional<PathCalcResult> get_path_point(const std::vector<geometry_msgs::msg::PoseStamped>& path_spline);
     /// Creates a spline from the path recived from path planner and also checks if it needs to avoid objects
-    std::vector<geometry_msgs::msg::PoseStamped> get_path_spline(const nav_msgs::msg::Path& path);
+    std::optional<std::vector<geometry_msgs::msg::PoseStamped>> get_path_spline(const nav_msgs::msg::Path& path);
 
     ~PurePursuitNode() override { this->stop_token.store(true); }
 };
