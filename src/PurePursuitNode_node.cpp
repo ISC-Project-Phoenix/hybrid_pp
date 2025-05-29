@@ -17,7 +17,7 @@ PurePursuitNode::PurePursuitNode(const rclcpp::NodeOptions& options)
     max_look_ahead_distance = this->declare_parameter<float>("max_look_ahead_distance", 10.0);
     k_dd = this->declare_parameter<float>("k_dd", 1.0);
     max_speed = this->declare_parameter<float>("max_speed", 6.7056);
-    max_speed = this->declare_parameter<float>("min_speed", 0.5);
+    min_speed = this->declare_parameter<float>("min_speed", 0.5);
     avoidance_radius = this->declare_parameter<float>("avoidance_radius", 2);
     rear_axle_frame = this->declare_parameter<std::string>("rear_axle_frame", "rear_axle");
     wheel_base = this->declare_parameter<float>("wheel_base", 1.08);
@@ -415,6 +415,8 @@ std::vector<geometry_msgs::msg::PoseStamped> PurePursuitNode::get_objects_from_s
 std::optional<std::vector<geometry_msgs::msg::PoseStamped>> PurePursuitNode::get_path_spline(const nav_msgs::msg::Path& path) {
     // Create a copy of the path to avoid mutating the main
     auto local_path = path;
+    
+    // std::vector<geometry_msgs::msg::PoseStamped>
     auto local_objects = this->objects;
 
     // Transform odom->rear-axle, for easy calculations
