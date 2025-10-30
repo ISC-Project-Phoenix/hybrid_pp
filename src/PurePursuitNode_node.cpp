@@ -427,7 +427,7 @@ std::optional<std::vector<geometry_msgs::msg::PoseStamped>> PurePursuitNode::get
     // Spline connecting our path points
     std::vector<geometry_msgs::msg::PoseStamped> spline;
 
-    bool gate = true;
+    bool fails_to_exceed_look_ahead = true;
     float look_ahead_distance = std::clamp(k_dd * current_speed, min_look_ahead_distance, max_look_ahead_distance);
     // Build a spline of linear lines for our path
     for (size_t i = 0; i < local_path.poses.size() - 1; i++) {
@@ -437,7 +437,7 @@ std::optional<std::vector<geometry_msgs::msg::PoseStamped>> PurePursuitNode::get
         double& y = point1.pose.position.y;
 
         if ( std::pow(std::pow(x,2) + std::pow(y,2),0.5) < look_ahead_distance){
-            gate = false;
+            fails_to_exceed_look_ahead = false;
         }
 
         // auto point2 = local_path.poses.at(i + 1);
@@ -450,13 +450,19 @@ std::optional<std::vector<geometry_msgs::msg::PoseStamped>> PurePursuitNode::get
         // float y_inc = dy / steps;
         spline.push_back(point1);
         /*
+        // this is the DDA for when we dont have enough points
         for (int j = 0; (float)j < steps; j++) {
             point1.pose.position.x += x_inc;
             point1.pose.position.y += y_inc;
             spline.push_back(point1);
         }*/
     }
-    if (gate) return std::nullopt;
+    // why do i do this?
+    // checks if look ahead distance does not ever exceed beyond look ahead distance
+    if (fails_to_exceed_look_ahead) return std::nullopt;    
+    // stay on old path. 
+    // Otherwise we will be provided a path that is impossible to follow 
+    // because look ahead is what will choice the clsest point that also exceeds it. 
 
     // For each spline point, shift it if it is too close to an obstacle. This has the effect of wrapping the spline
     // around obstacles.
