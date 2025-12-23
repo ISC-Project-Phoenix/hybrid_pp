@@ -80,19 +80,18 @@ PurePursuitNode::PurePursuitNode(const rclcpp::NodeOptions& options)
                     // this->publish_stop_command();
 
                 } else {
-
                     ackermann_msgs::msg::AckermannDrive keepgoing{};
                     //TODO hotfix to get left at comp
                     keepgoing.speed = 1.0;
 
-                    if ((*last_path_result).intersection_point.pose.position.x < 0) {  /////////////////////// this hopefully should switch the steering directions but breaks on right turns
+                    if ((*last_path_result).intersection_point.pose.position.x <
+                        0) {  /////////////////////// this hopefully should switch the steering directions but breaks on right turns
                         keepgoing.steering_angle = -0.27;
                     } else {
                         keepgoing.steering_angle = 0.27;
                     }
 
                     this->nav_ack_vel_pub->publish(keepgoing);
-
                 }
 
                 continue;
@@ -150,9 +149,9 @@ void PurePursuitNode::path_cb(const nav_msgs::msg::Path::SharedPtr msg) {
 
         // Create a spline from the path message
         auto holder = get_path_spline(*msg);
-        if ( holder.has_value()){
+        if (holder.has_value()) {
             this->path_spline = holder.value();
-        } // otherwise we do nothing!
+        }  // otherwise we do nothing!
     }
 }
 
@@ -388,7 +387,7 @@ std::vector<geometry_msgs::msg::PoseStamped> PurePursuitNode::get_objects_from_s
         }
 
         // If our count is greater than 3 we have an object with at least 3 consecutive laser scan points
-        if (count >= 450) { //TODO make param
+        if (count >= 450) {                                  //TODO make param
             obj_index_pairs[starting_index] = ending_index;  // Add the starting and ending index to our map
         }
     }
@@ -399,9 +398,11 @@ std::vector<geometry_msgs::msg::PoseStamped> PurePursuitNode::get_objects_from_s
             // Create the point from the laser scan
             geometry_msgs::msg::PoseStamped point;
             point.header.frame_id = laser_scan->header.frame_id;
-	    // TODO hardcoded for ISC sick angles
-            point.pose.position.x = laser_scan->ranges.at(i) * -cos(laser_scan->angle_increment * i + (45 * M_PI / 180));
-            point.pose.position.y = laser_scan->ranges.at(i) * -sin(laser_scan->angle_increment * i + (45 * M_PI / 180));
+            // TODO hardcoded for ISC sick angles
+            point.pose.position.x =
+                laser_scan->ranges.at(i) * -cos(laser_scan->angle_increment * i + (45 * M_PI / 180));
+            point.pose.position.y =
+                laser_scan->ranges.at(i) * -sin(laser_scan->angle_increment * i + (45 * M_PI / 180));
 
             // Add point to detected objects
             detected_points.push_back(point);
@@ -412,10 +413,11 @@ std::vector<geometry_msgs::msg::PoseStamped> PurePursuitNode::get_objects_from_s
     return detected_points;
 }
 
-std::optional<std::vector<geometry_msgs::msg::PoseStamped>> PurePursuitNode::get_path_spline(const nav_msgs::msg::Path& path) {
+std::optional<std::vector<geometry_msgs::msg::PoseStamped>> PurePursuitNode::get_path_spline(
+    const nav_msgs::msg::Path& path) {
     // Create a copy of the path to avoid mutating the main
     auto local_path = path;
-    
+
     // std::vector<geometry_msgs::msg::PoseStamped>
     auto local_objects = this->objects;
 
@@ -436,7 +438,7 @@ std::optional<std::vector<geometry_msgs::msg::PoseStamped>> PurePursuitNode::get
         double& x = point1.pose.position.x;
         double& y = point1.pose.position.y;
 
-        if ( std::pow(std::pow(x,2) + std::pow(y,2),0.5) < look_ahead_distance){
+        if (std::pow(std::pow(x, 2) + std::pow(y, 2), 0.5) < look_ahead_distance) {
             fails_to_exceed_look_ahead = false;
         }
 
@@ -459,10 +461,10 @@ std::optional<std::vector<geometry_msgs::msg::PoseStamped>> PurePursuitNode::get
     }
     // why do i do this?
     // checks if look ahead distance does not ever exceed beyond look ahead distance
-    if (fails_to_exceed_look_ahead) return std::nullopt;    
-    // stay on old path. 
-    // Otherwise we will be provided a path that is impossible to follow 
-    // because look ahead is what will choice the clsest point that also exceeds it. 
+    if (fails_to_exceed_look_ahead) return std::nullopt;
+    // stay on old path.
+    // Otherwise we will be provided a path that is impossible to follow
+    // because look ahead is what will choice the clsest point that also exceeds it.
 
     // For each spline point, shift it if it is too close to an obstacle. This has the effect of wrapping the spline
     // around obstacles.
