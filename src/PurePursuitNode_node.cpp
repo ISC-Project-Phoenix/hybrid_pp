@@ -308,6 +308,25 @@ std::optional<PathCalcResult> PurePursuitNode::get_path_point(
 
     geometry_msgs::msg::PoseStamped intercepted_pose{};
 
+    // look ahead sanity check! 
+    // max ahead point 
+    float max_distance = 0.0;
+    for (const auto& i : local_path){
+        if (max_distance < std::abs(distance(i.pose.position, zero) )){
+            max_distance = std::abs(distance(i.pose.position, zero));
+        }
+    }
+
+    if ( look_ahead_distance > max_distance ) {
+        // do the thing I suppose
+        look_ahead_distance = max_distance;
+    }
+
+    if (look_ahead_distance < min_look_ahead_distance ){
+        // basically prevent lookahead from exceeding the minium distance ircc
+        return std::nullopt;
+    }
+
     // Find point on the spline that intersects our lookahead, must be in front of us
     bool point_found = false;
     for (const auto& i : local_path) {
