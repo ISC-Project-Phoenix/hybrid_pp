@@ -23,6 +23,7 @@ PurePursuitNode::PurePursuitNode(const rclcpp::NodeOptions& options)
     wheel_base = this->declare_parameter<float>("wheel_base", 1.08);
     gravity_constant = this->declare_parameter<float>("gravity_constant", 9.81);
     debug = this->declare_parameter<bool>("debug", true);
+    reverse_path_search = this->declare_parameter<bool>("reverse_path_search", true);
     this->declare_parameter<bool>("stop_on_no_path", true);
 
     // Var init
@@ -308,33 +309,46 @@ std::optional<PathCalcResult> PurePursuitNode::get_path_point(
 
     geometry_msgs::msg::PoseStamped intercepted_pose{};
 
-    // look ahead sanity check! 
-    // max ahead point 
+    // look ahead sanity check!
+    // max ahead point
     float max_distance = 0.0;
-    for (const auto& i : local_path){
-        if (max_distance < std::abs(distance(i.pose.position, zero) )){
+    for (const auto& i : local_path) {
+        if (max_distance < std::abs(distance(i.pose.position, zero))) {
             max_distance = std::abs(distance(i.pose.position, zero));
         }
     }
 
-    if ( look_ahead_distance > max_distance ) {
+    if (look_ahead_distance > max_distance) {
         // do the thing I suppose
         look_ahead_distance = max_distance;
     }
 
-    if (look_ahead_distance < min_look_ahead_distance ){
+    if (look_ahead_distance < min_look_ahead_distance) {
         // basically prevent lookahead from exceeding the minium distance ircc
         return std::nullopt;
     }
 
     // Find point on the spline that intersects our lookahead, must be in front of us
     bool point_found = false;
-    for (const auto& i : local_path) {
-        // The spline is somewhat sparse, so have some leeway in selecting points on it
-        if (i.pose.position.x >= 0 && std::abs(distance(i.pose.position, zero) - look_ahead_distance) <= 1.0) {
-            intercepted_pose = i;
-            point_found = true;
-            break;
+    if (reverse_path_search) {
+        for (auto it = local_path.rbegin(); it != local_path.rend(); ++it) {
+            const auto& i = *it;
+            // The spline is somewhat sparse, so have some leeway in selecting points on it
+            if (i.pose.position.x >= 0 && std::abs(distance(i.pose.position, zero) - look_ahead_distance) <= 1.0) {
+                intercepted_pose = i;
+                point_found = true;
+                break;
+            }
+        }
+
+    } else {
+        for (const auto& i : local_path) {
+            // The spline is somewhat sparse, so have some leeway in selecting points on it
+            if (i.pose.position.x >= 0 && std::abs(distance(i.pose.position, zero) - look_ahead_distance) <= 1.0) {
+                intercepted_pose = i;
+                point_found = true;
+                break;
+            }
         }
     }
 
@@ -385,7 +399,7 @@ std::vector<geometry_msgs::msg::PoseStamped> PurePursuitNode::get_objects_from_s
         }
 
         // If our count is greater than 3 we have an object with at least 3 consecutive laser scan points
-        if (count >= 450) { //TODO make param
+        if (count >= 450) {                                  //TODO make param
             obj_index_pairs[starting_index] = ending_index;  // Add the starting and ending index to our map
         }
     }
@@ -396,9 +410,11 @@ std::vector<geometry_msgs::msg::PoseStamped> PurePursuitNode::get_objects_from_s
             // Create the point from the laser scan
             geometry_msgs::msg::PoseStamped point;
             point.header.frame_id = laser_scan->header.frame_id;
-	    // TODO hardcoded for ISC sick angles
-            point.pose.position.x = laser_scan->ranges.at(i) * -cos(laser_scan->angle_increment * i + (45 * M_PI / 180));
-            point.pose.position.y = laser_scan->ranges.at(i) * -sin(laser_scan->angle_increment * i + (45 * M_PI / 180));
+            // TODO hardcoded for ISC sick angles
+            point.pose.position.x =
+                laser_scan->ranges.at(i) * -cos(laser_scan->angle_increment * i + (45 * M_PI / 180));
+            point.pose.position.y =
+                laser_scan->ranges.at(i) * -sin(laser_scan->angle_increment * i + (45 * M_PI / 180));
 
             // Add point to detected objects
             detected_points.push_back(point);
