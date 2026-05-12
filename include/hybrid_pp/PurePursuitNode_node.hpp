@@ -11,13 +11,13 @@
 
 #include "ackermann_msgs/msg/ackermann_drive.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
+#include "hybrid_pp/filters.hpp"
 #include "laser_geometry/laser_geometry/laser_geometry.hpp"
 #include "nav_msgs/msg/odometry.hpp"
 #include "nav_msgs/msg/path.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/laser_scan.hpp"
 #include "visualization_msgs/msg/marker.hpp"
-#include "hybrid_pp/filters.hpp"
 
 /// Pure pursuit command result, with components
 struct CommandCalcResult {
@@ -71,6 +71,8 @@ private:
     float k_dd;
     /// Publishes visualisations if true
     bool debug;
+    // to reverse the path because I like -AFB
+    bool reverse_path_search;
 
     // Multithreading
     /// Set to true to kill thread
@@ -117,9 +119,9 @@ private:
     /// Publishes a zero move command
     void publish_stop_command() {
         ackermann_msgs::msg::AckermannDrive stop{};
-	//TODO hotfix to get left at comp
-	stop.steering_angle = 0.27;
-	stop.speed = 1.0;
+        //TODO hotfix to get left at comp
+        stop.steering_angle = 0.27;
+        stop.speed = 1.0;
         this->nav_ack_vel_pub->publish(stop);
     }
 
