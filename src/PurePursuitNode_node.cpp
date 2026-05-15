@@ -13,10 +13,10 @@ PurePursuitNode::PurePursuitNode(const rclcpp::NodeOptions& options)
       command_filter(this->declare_parameter<int>("filter_window", 10)) {
     // Params
     min_look_ahead_distance = this->declare_parameter<float>("min_look_ahead_distance",
-                                                             3.85);  // This is set to the min turning radius of phnx
+                                                             5);  // This is set to the min turning radius of phnx
     max_look_ahead_distance = this->declare_parameter<float>("max_look_ahead_distance", 10.0);
     k_dd = this->declare_parameter<float>("k_dd", 1.0);
-    max_speed = this->declare_parameter<float>("max_speed", 6.7056);
+    max_speed = this->declare_parameter<float>("max_speed", 2.0);
     min_speed = this->declare_parameter<float>("min_speed", 0.5);
     avoidance_radius = this->declare_parameter<float>("avoidance_radius", 2);
     rear_axle_frame = this->declare_parameter<std::string>("rear_axle_frame", "rear_axle");
@@ -171,7 +171,7 @@ CommandCalcResult PurePursuitNode::calculate_command_to_point(const geometry_msg
 
     // Set the speed based off the eq v = sqrt(static_friction * gravity * turn_radius) with static friction being 1.
     // This finds the fastest speed that can be taken without breaking friction and slipping.
-    float set_speed = std::clamp(std::sqrt(this->gravity_constant * std::abs(distance_to_icr) * 0.3f), this->min_speed,
+    float set_speed = std::clamp(std::sqrt(this->gravity_constant * std::abs(distance_to_icr) * 0.2f), this->min_speed,
                                  this->max_speed);
     ack_msg.speed = set_speed;
 
@@ -328,6 +328,25 @@ std::optional<PathCalcResult> PurePursuitNode::get_path_point(
     float look_ahead_distance = std::clamp(k_dd * current_speed, min_look_ahead_distance, max_look_ahead_distance);
 
     geometry_msgs::msg::PoseStamped intercepted_pose{};
+
+    // look ahead sanity check! 
+    // max ahead point 
+    float max_distance = 0.0;
+    for (const auto& i : local_path){
+        if (max_distance < std::abs(distance(i.pose.position, zero) )){
+            max_distance = std::abs(distance(i.pose.position, zero));
+        }
+    }
+
+    if ( look_ahead_distance > max_distance ) {
+        // do the thing I suppose
+        look_ahead_distance = max_distance;
+    }
+
+    if (look_ahead_distance < min_look_ahead_distance ){
+        // basically prevent lookahead from exceeding the minium distance ircc
+        return std::nullopt;
+    }
 
     // Find point on the spline that intersects our lookahead, must be in front of us
     bool point_found = false;
